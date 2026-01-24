@@ -1,5 +1,5 @@
 {
-  "name": "accord",
+  "name": "@navirondynamics/accord",
   "version": "1.0.0",
   "description": "A policy-first identity and access engine for modular systems.",
   "main": "./dist/index.js",
