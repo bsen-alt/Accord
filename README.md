@@ -1,22 +1,64 @@
 # Accord
 
-**Accord** is a policy-first identity and access engine designed to unify identity representation, context resolution, and authorization under a single, declarative model.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@navirondynamics/accord">
+    <img src="https://img.shields.io/npm/v/@navirondynamics/accord.svg" alt="npm version" />
+  </a>
+  <a href="https://www.npmjs.com/package/@navirondynamics/accord">
+    <img src="https://img.shields.io/npm/dm/@navirondynamics/accord.svg" alt="npm downloads" />
+  </a>
+  <a href="https://github.com/bsen-alt/Accord">
+    <img src="https://img.shields.io/github/license/bsen-alt/Accord" alt="license" />
+  </a>
+</p>
 
-It treats access not as scattered checks embedded in application code, but as a **formal agreement** between identities, systems, and resources.
+Accord is a **policy-first identity and access engine for Node.js**.
 
-## 🧠 The System of Agreement
+It treats access not as scattered application logic, but as a formal agreement between identities, systems, and resources - evaluated through declarative, versioned policies.
 
-Modern authorization is often fragmented:
+**New in v1.1:** Observability, YAML configuration, hot reload, and native NestJS support.
 
-- Authentication handled in one service.
-- Roles defined in another.
-- Access logic scattered across codebases.
+---
 
-**Accord** reframes this as a governance layer. Instead of embedding `if (user.admin)` checks, Accord externalizes rules into explicit, versioned policies.
+## Table of Contents
 
-- **Explicit:** Access rules are defined before execution.
-- **Inspectable:** Every decision returns a reason.
-- **Centralized:** One source of truth for multiple services.
+- [Why Accord](#-why-accord)
+- [Key Features](#key-features)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start-v11)
+- [Framework Integration](#-framework-integration)
+- [CLI Tool](#-cli-tool)
+- [Documentation](#-documentation)
+- [Roadmap](#-roadmap)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+---
+
+## 🚀 Why Accord?
+
+Modern authorization is fragmented:
+
+- Authentication in one service
+- Roles in another
+- Access logic scattered across microservices
+
+Accord centralizes authorization into a single **governance layer**, acting as the _System of Record_ for access control across your platform.
+
+Instead of embedding authorization logic throughout your codebase, Accord externalizes it into auditable, inspectable, and versioned policy definitions.
+
+---
+
+## Key Features
+
+- 🔍 **Observability** – Built-in audit logging (console & file)
+- 📝 **Policy as Code** – JSON and YAML configuration support
+- 🛡️ **Reliability** – Zod-based schema validation to prevent invalid policies
+- 🔄 **Zero-Downtime Updates** – Hot reload policies without restarting services
+- 🧩 **Framework Adapters** – Express, NestJS, and Fastify integrations
+- 📦 **CLI Tooling** – Validate and simulate access decisions locally
+
+---
 
 ## 📦 Installation
 
@@ -24,89 +66,93 @@ Modern authorization is often fragmented:
 npm install @navirondynamics/accord
 ```
 
-## 🚀 Quick Start
+---
 
-### 1. Define Your Configuration
+## 🛠️ Quick Start (v1.1)
 
-Create a `config` folder in your project root.
+### 1. Define Policies (YAML supported)
 
-**`config/policies.json`**
+Create `config/policies.yaml`:
 
-```json
-[
-  {
-    "id": "policy-admin",
-    "version": "1.0",
-    "effect": "allow",
-    "subject": {
-      "type": "user",
-      "attributes": { "role": "admin" }
-    },
-    "action": ["delete"],
-    "resource": { "type": "booking" }
-  }
-]
+```yaml
+- id: 'admin-delete'
+  version: '1.1'
+  effect: 'allow'
+  subject:
+    type: 'user'
+    attributes:
+      role: 'admin'
+  action: ['delete']
+  resource:
+    type: 'booking'
 ```
 
-**`config/identities.json`**
+---
 
-```json
-[
-  {
-    "id": "alice",
-    "type": "user",
-    "status": "active",
-    "attributes": { "role": "admin" }
-  }
-]
-```
-
-### 2. Use in Your Code
+### 2. Initialize Accord
 
 ```javascript
-const { Accord } = require('@navirondynamics/accord');
+const { Accord, ConsoleAuditLogger } = require('@navirondynamics/accord');
 
-// 1. Initialize the Engine
 const accord = new Accord({
-  policyPath: './config/policies.json',
+  policyPath: './config/policies.yaml',
   identityPath: './config/identities.json',
+  logger: new ConsoleAuditLogger(),
 });
+```
 
-async function deleteBooking(bookingId, userId) {
-  // 2. Check Access
+---
+
+### 3. Check Access
+
+```javascript
+async function deleteUser(userId) {
   const decision = await accord.check(userId, 'delete', {
-    type: 'booking',
-    id: bookingId,
+    type: 'user',
+    id: userId,
   });
 
-  // 3. Enforce Decision
   if (decision.decision === 'allow') {
-    console.log('Access Granted');
-    // Perform delete...
+    console.log('Permission Granted');
+    // Perform deletion...
   } else {
     console.log('Access Denied:', decision.reason);
   }
 }
-
-deleteBooking('b1', 'alice');
 ```
 
-## 🛡️ Express Middleware
+---
 
-Protect your routes without cluttering your controller logic.
+## 🛡️ Framework Integration
+
+### NestJS
+
+```typescript
+import { AccordGuard } from '@navirondynamics/accord/adapters/nest';
+
+@Controller('bookings')
+export class BookingController {
+  @UseGuards(
+    new AccordGuard({
+      accordInstance: accord,
+      action: 'delete',
+      resourceType: 'booking',
+    })
+  )
+  @Delete(':id')
+  deleteBooking(@Param('id') id: string) {
+    // Only authorized users reach here
+  }
+}
+```
+
+---
+
+### Express
 
 ```javascript
-const express = require('express');
-const { Accord } = require('@navirondynamics/accord');
 const { protect } = require('@navirondynamics/accord/adapters/express');
 
-const app = express();
-const accord = new Accord({
-  policyPath: './config/policies.json',
-  identityPath: './config/identities.json',
-});
-
-// Protect this route
 app.delete(
   '/bookings/:id',
   protect({
@@ -115,36 +161,70 @@ app.delete(
     resourceType: 'booking',
   }),
   (req, res) => {
-    // Only allowed users reach here
-    res.send('Booking deleted');
+    res.send('Deleted');
   }
 );
-
-app.listen(3000);
 ```
 
-## 🛠️ CLI Tool
+Fastify support and advanced usage are available in the adapters documentation.
 
-Validate policies and test access logic from your terminal.
+---
 
-**Validate Configuration:**
+## 🔧 CLI Tool
+
+Validate policies or simulate access decisions directly from your terminal.
 
 ```bash
-npx @navirondynamics/accord validate ./config/policies.json
+# Validate policy syntax
+npx @navirondynamics/accord validate ./config/policies.yaml
+
+# Test access logic
+npx @navirondynamics/accord eval -i user_123 -a delete -r booking
 ```
 
-**Dry-Run Access Check:**
+---
 
-```bash
-npx @navirondynamics/accord eval -i alice -a delete -r booking
-```
+## 📚 Documentation
 
-## ⚙️ Core Concepts
+- **Getting Started** – Installation and core concepts
+- **Configuration Guide** – Identities, policies, JSON vs YAML
+- **Observability & Auditing** – Production logging setup
+- **Framework Adapters** – Express, NestJS, Fastify usage
+- **CLI Reference** – Full command list
 
-- **Identity:** Represents who is acting (User, Service, Agent). Includes a `status` (active/suspended) allowing for a "Kill Switch".
-- **Resource:** Represents what is being accessed.
-- **Policy:** The agreement linking Identity, Action, and Resource. Supports RBAC (Roles) and ABAC (Attributes).
-- **Decision:** The output (`allow`/`deny`) including a `reason` for auditing.
+---
+
+## 🗺️ Roadmap
+
+Planned improvements:
+
+- Policy versioning & rollback
+- Database-backed policy storage
+- Web-based policy editor
+- Decision caching
+- OpenTelemetry tracing
+- Distributed policy synchronization
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome.
+
+1. Fork the repository
+2. Create a feature branch
+
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+
+3. Commit your changes
+4. Push to your fork
+5. Open a Pull Request
+
+Please ensure tests pass and documentation is updated.
+
+---
 
 ## 📜 License
 

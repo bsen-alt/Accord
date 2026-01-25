@@ -8,6 +8,17 @@
     "dist",
     "README.md"
   ],
+
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bsen-alt/Accord.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bsen-alt/Accord/issues"
+  },
+  "homepage": "https://github.com/bsen-alt/Accord#readme",
+
+
   "scripts": {
     "test": "jest",
     "build": "tsc",
