@@ -1,50 +1,155 @@
-Accord
+# Accord
 
-Accord is a policy-first identity and access engine designed to unify identity representation, context resolution, and authorization under a single, declarative policy model.
+**Accord** is a policy-first identity and access engine designed to unify identity representation, context resolution, and authorization under a single, declarative model.
 
-Installation
+It treats access not as scattered checks embedded in application code, but as a **formal agreement** between identities, systems, and resources.
 
-`bashnpm install accord`
+## 🧠 The System of Agreement
 
-Quick Start
+Modern authorization is often fragmented:
 
-1. Initialize Configuration
+- Authentication handled in one service.
+- Roles defined in another.
+- Access logic scattered across codebases.
 
-   Create a config folder in your project root.
+**Accord** reframes this as a governance layer. Instead of embedding `if (user.admin)` checks, Accord externalizes rules into explicit, versioned policies.
 
-config/policies.json`json[ { "id": "policy-admin", "version": "1.0", "effect": "allow", "subject": { "type": "user", "attributes": { "role": "admin" } }, "action": ["delete"], "resource": { "type": "booking" } }]`
+- **Explicit:** Access rules are defined before execution.
+- **Inspectable:** Every decision returns a reason.
+- **Centralized:** One source of truth for multiple services.
 
-config/identities.json`json[ { "id": "admin_01", "type": "user", "status": "active", "attributes": { "role": "admin" } }]`
+## 📦 Installation
 
-2. Use in Code
+```bash
+npm install @navirondynamics/accord
+```
 
-````typescriptimport
+## 🚀 Quick Start
 
-const accord = new Accord({ policyPath: './config/policies.json', identityPath: './config/identities.json'});
+### 1. Define Your Configuration
 
-async function deleteBooking(bookingId: string, userId: string) { const decision = await accord.check(userId, 'delete', { type: 'booking', id: bookingId });
+Create a `config` folder in your project root.
 
-if (decision.decision === 'allow') { console.log('Access Granted'); // Perform delete... } else { console.log('Access Denied:', decision.reason); }}```
+**`config/policies.json`**
 
-Express Middleware
-Protect your routes easily:
+```json
+[
+  {
+    "id": "policy-admin",
+    "version": "1.0",
+    "effect": "allow",
+    "subject": {
+      "type": "user",
+      "attributes": { "role": "admin" }
+    },
+    "action": ["delete"],
+    "resource": { "type": "booking" }
+  }
+]
+```
 
-```typescriptimport express from 'express';import { Accord } from 'accord';import { protect } from 'accord/adapters/express'; // Note: Check actual path after build
+**`config/identities.json`**
 
-const app = express();const accord = new Accord({ policyPath: './config/policies.json', ... });
+```json
+[
+  {
+    "id": "alice",
+    "type": "user",
+    "status": "active",
+    "attributes": { "role": "admin" }
+  }
+]
+```
 
-// Protect this routeapp.delete('/bookings/:id', protect({ accordInstance: accord, action: 'delete', resourceType: 'booking' }), (req, res) => { // Only allowed users reach here res.send('Booking deleted'); });```
+### 2. Use in Your Code
 
-CLI Tool
-Validate policies locally:
+```javascript
+const { Accord } = require('@navirondynamics/accord');
 
-```bashnpx accord-cli validate ./config/policies.json```
+// 1. Initialize the Engine
+const accord = new Accord({
+  policyPath: './config/policies.json',
+  identityPath: './config/identities.json',
+});
 
-Test access logic:
+async function deleteBooking(bookingId, userId) {
+  // 2. Check Access
+  const decision = await accord.check(userId, 'delete', {
+    type: 'booking',
+    id: bookingId,
+  });
 
-```bashnpx accord-cli eval -i user_123 -a delete -r booking```
+  // 3. Enforce Decision
+  if (decision.decision === 'allow') {
+    console.log('Access Granted');
+    // Perform delete...
+  } else {
+    console.log('Access Denied:', decision.reason);
+  }
+}
 
-License
+deleteBooking('b1', 'alice');
+```
+
+## 🛡️ Express Middleware
+
+Protect your routes without cluttering your controller logic.
+
+```javascript
+const express = require('express');
+const { Accord } = require('@navirondynamics/accord');
+const { protect } = require('@navirondynamics/accord/adapters/express');
+
+const app = express();
+const accord = new Accord({
+  policyPath: './config/policies.json',
+  identityPath: './config/identities.json',
+});
+
+// Protect this route
+app.delete(
+  '/bookings/:id',
+  protect({
+    accordInstance: accord,
+    action: 'delete',
+    resourceType: 'booking',
+  }),
+  (req, res) => {
+    // Only allowed users reach here
+    res.send('Booking deleted');
+  }
+);
+
+app.listen(3000);
+```
+
+## 🛠️ CLI Tool
+
+Validate policies and test access logic from your terminal.
+
+**Validate Configuration:**
+
+```bash
+npx @navirondynamics/accord validate ./config/policies.json
+```
+
+**Dry-Run Access Check:**
+
+```bash
+npx @navirondynamics/accord eval -i alice -a delete -r booking
+```
+
+## ⚙️ Core Concepts
+
+- **Identity:** Represents who is acting (User, Service, Agent). Includes a `status` (active/suspended) allowing for a "Kill Switch".
+- **Resource:** Represents what is being accessed.
+- **Policy:** The agreement linking Identity, Action, and Resource. Supports RBAC (Roles) and ABAC (Attributes).
+- **Decision:** The output (`allow`/`deny`) including a `reason` for auditing.
+
+## 📜 License
+
 ISC
-````
 
+```
+
+```
