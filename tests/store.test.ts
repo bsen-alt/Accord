@@ -10,6 +10,13 @@ describe('Identity Store', () => {
   beforeAll(() => {
     // Initialize store with the existing config file
     store = new IdentityStore(testFilePath);
+
+    // FIX: Ensure u1 is active before we start testing (Cleanup from previous runs)
+    try {
+      store.updateIdentity('u1', { status: 'active' });
+    } catch (e) {
+      // Ignore if user doesn't exist yet (shouldn't happen based on flow, but safe to ignore)
+    }
   });
 
   test('1. Should load identities from file', () => {

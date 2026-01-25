@@ -1,0 +1,11 @@
+# config/policies.yaml
+- id: 'yaml-booking-allow'
+  version: '1.0'
+  effect: 'allow'
+  subject:
+    type: 'user'
+    attributes:
+      role: 'booking-admin'
+  action: ['delete', 'create', 'update']
+  resource:
+    type: 'booking'

@@ -47,6 +47,12 @@ describe('Express Adapter', () => {
 
     await middleware(req, res, next);
 
+    // DEBUG: Log the decision to see WHY it failed
+    // Check the response body if it was a deny
+    if (!next.mock.calls.length) {
+       console.log("DEBUG Adapter Decision:", res.body);
+    }
+
     // Expect next() to be called (Allowed)
     expect(next).toHaveBeenCalled();
     expect(res.statusCode).toBeUndefined(); // No error sent

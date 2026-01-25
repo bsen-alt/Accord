@@ -1,5 +1,6 @@
 // src/store/identity.ts
 import { Identity } from '../core/types';
+import { Schemas } from '../core/validation';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -19,7 +20,19 @@ export class IdentityStore {
     try {
       if (fs.existsSync(this.filePath)) {
         const fileContent = fs.readFileSync(this.filePath, 'utf-8');
-        this.identities = JSON.parse(fileContent);
+        const rawData = JSON.parse(fileContent);
+
+         // VALIDATION STEP
+        const result = Schemas.Identity.array().safeParse(rawData);
+
+        if (!result.success) {
+          console.error('Invalid Identity Structure:', result.error.format());
+          // For v1, we start empty on fail to be safe, or throw. 
+          // Let's throw to match enterprise behavior.
+          throw new Error(`Identity validation failed for ${this.filePath}`);
+        }
+
+        this.identities = result.data;
       } else {
         this.identities = [];
         console.warn(`Identity file not found at ${this.filePath}, starting empty.`);
@@ -83,5 +96,13 @@ export class IdentityStore {
    */
   getAllIdentities(): Identity[] {
     return this.identities;
+  }
+
+    /**
+   * Reloads identities from disk.
+   * Useful if the file was edited externally.
+   */
+  reload(): void {
+    this.load(); // Re-run the load logic
   }
 }

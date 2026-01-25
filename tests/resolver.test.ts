@@ -8,6 +8,13 @@ describe('Identity Resolver', () => {
 
   beforeAll(() => {
     store = new IdentityStore('./config/identities.json');
+    // Force u1 to active before running tests (Cleanup from previous runs)
+    try {
+      store.updateIdentity('u1', { status: 'active' });
+    } catch (e) {
+      // Ignore if user doesn't exist yet
+    }
+
     resolver = new IdentityResolver(store);
   });
 

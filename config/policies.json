@@ -1,4 +1,3 @@
-
 [
   {
     "id": "policy-admin-allow",
@@ -10,22 +9,9 @@
         "role": "admin"
       }
     },
-    "action": ["delete"],
-    "resource": {
-      "type": "booking"
-    }
-  },
-  {
-    "id": "policy-guest-deny",
-    "version": "1.0",
-    "effect": "deny",
-    "subject": {
-      "type": "user",
-      "attributes": {
-        "role": "guest"
-      }
-    },
-    "action": ["delete"],
+    "action": [
+      "delete"
+    ],
     "resource": {
       "type": "booking"
     }
