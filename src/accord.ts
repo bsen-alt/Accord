@@ -1,40 +1,42 @@
-// src/accord.ts
-import { loadPolicies } from './core/loader';
 import { compilePolicies } from './core/compiler';
-import { IdentityStore } from './store/identity';
 import { IdentityResolver } from './core/resolver';
 import { evaluate } from './core/evaluator';
-import { AuditLogger, ConsoleAuditLogger, AuditEvent } from './core/logger'; // NEW IMPORTS
-import { AccessRequest, Decision, CompiledPolicy } from './core/types';
+import { IStorageAdapter, JITConfig, LifecycleHooks, DecisionTrace, AccordConfig, Policy } from './core/types';
+import { ConsoleAuditLogger } from './core/logger';
 
-export interface AccordConfig {
-  policyPath: string;
-  identityPath: string;
-  logger?: AuditLogger; // OPTIONAL: Default to ConsoleAuditLogger if undefined
-}
+// Re-exporting AccordConfig from types for backward compatibility in index.ts
+export type AccordV2Config = {
+  adapter: IStorageAdapter;
+  jit?: JITConfig;
+  hooks?: LifecycleHooks;
+  logger?: any;
+};
 
 export class Accord {
-  private policies: CompiledPolicy[];
-  private identityStore: IdentityStore;
+  private adapter: IStorageAdapter;
   private resolver: IdentityResolver;
-  private config: AccordConfig;
-  private logger: AuditLogger; // NEW PROPERTY
+  private policies: Policy[] = [];
+  private hooks: LifecycleHooks;
+  private logger: any; 
 
-  constructor(config: AccordConfig) {
-    this.config = config;
-    
-    // 1. Initialize Logger (Default to ConsoleAuditLogger)
+  constructor(config: AccordV2Config) {
+    this.adapter = config.adapter;
+    this.hooks = config.hooks || {};
     this.logger = config.logger || new ConsoleAuditLogger();
+    
+    this.resolver = new IdentityResolver(this.adapter, config.jit);
 
-    // 2. Initialize Store
-    this.identityStore = new IdentityStore(config.identityPath);
+    this.init();
+  }
 
-    // 3. Initialize Resolver
-    this.resolver = new IdentityResolver(this.identityStore);
+  private async init() {
+    await this.reload();
+  }
 
-    // 4. Load and COMPILE Policies
-    const rawPolicies = loadPolicies(config.policyPath);
-    this.policies = compilePolicies(rawPolicies); 
+  async reload(): Promise<void> {
+    const rawPolicies = await this.adapter.listPolicies();
+    this.policies = compilePolicies(rawPolicies);
+    console.log(`[Accord] Reloaded ${this.policies.length} policies`);
   }
 
   async check(
@@ -42,71 +44,60 @@ export class Accord {
     action: string,
     resource: any,
     context?: any
-  ): Promise<Decision> {
-    let decision: Decision;
-
+  ): Promise<DecisionTrace> {
+    const startTime = Date.now();
+    
     try {
-      // 1. Resolve Identity
-      const identity = this.resolver.resolve(externalId);
+      const identity = await this.resolver.resolve(externalId, context);
 
-      // 2. Construct AccessRequest
-      const request: AccessRequest = {
+      if (this.hooks.beforeDecision) {
+        for (const hook of this.hooks.beforeDecision) {
+          await hook({ request: { subject: identity, action, resource }, attributes: context });
+        }
+      }
+
+      const request = {
         subject: identity,
-        action: action,
-        resource: resource,
+        action,
+        resource,
         context: context || {}
       };
 
-      // 3. Evaluate
-      decision = await evaluate(request, this.policies);
+      const compiledPolicies = this.policies as any; 
+      const decision = await evaluate(request, compiledPolicies);
+
+      if (this.hooks.afterDecision) {
+        for (const hook of this.hooks.afterDecision) {
+          await hook(decision);
+        }
+      }
+
+      this.logger.log({
+        timestamp: new Date(),
+        decision: decision.decision,
+        userId: externalId,
+        action,
+        resourceType: resource.type,
+        ...decision.trace
+      });
+
+      return decision;
 
     } catch (error) {
-      decision = {
+      return {
         decision: 'deny',
-        reason: (error as Error).message
+        reason: (error as Error).message,
+        trace: {
+          matchedPolicies: [],
+          evaluatedPolicies: [],
+          latencyMs: Date.now() - startTime,
+          resolvedAttributes: {}
+        }
       };
     }
-
-    // 4. AUDIT LOG (New Step)
-    this.logger.log({
-      timestamp: new Date(),
-      decision: decision.decision,
-      policyId: decision.policy_id,
-      reason: decision.reason,
-      userId: externalId,
-      action: action,
-      resourceType: resource.type,
-      resourceId: resource.id
-    });
-
-    return decision;
-  }
-  
-  getStore(): IdentityStore {
-    return this.identityStore;
   }
 
-  /**
-   * Reloads Policies and Identities from disk.
-   * SAFETY: If the new config is invalid, the old config remains active.
-   */
-  reload(): void {
-    try {
-      // 1. Reload Policies
-      const newRawPolicies = loadPolicies(this.config.policyPath);
-      const newCompiledPolicies = compilePolicies(newRawPolicies);
-
-      // 2. Reload Identities
-      this.identityStore.reload();
-
-      // 3. Swap Logic (Atomic Update)
-      this.policies = newCompiledPolicies;
-
-      console.log('✓ Accord Reloaded Successfully');
-    } catch (error) {
-      console.error('✗ Reload Failed. Old config is still active.');
-      console.error('Reason:', (error as Error).message);
-      // We do NOT throw here. We want the app to keep running on old config.
-    }
+  getAdapter(): IStorageAdapter {
+    return this.adapter;
   }
 }

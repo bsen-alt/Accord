@@ -1,9 +1,7 @@
 // src/core/types.ts
+import { z } from 'zod';
 
-/**
- * The fundamental primitive: Who is acting?
- * In Accord v1, this is the Internal Identity profile.
- */
+// --- Existing Types ---
 export interface Identity {
   id: string;
   type: 'user' | 'service' | 'system' | 'agent';
@@ -11,62 +9,14 @@ export interface Identity {
   attributes: Record<string, any>;
 }
 
-/**
- * The fundamental primitive: What is being acted upon?
- */
 export interface Resource {
   type: string;
-  id?: string; // Optional in policy matching, but usually required for logic
+  id?: string;
   attributes: Record<string, any>;
 }
 
-/**
- * The fundamental primitive: What is happening?
- * Verb-based, not permission-based.
- */
 export type Action = string | string[];
-
-/**
- * The fundamental primitive: The situation.
- * Runtime context like Tenant, Time, IP, etc.
- */
 export type Context = Record<string, any>;
-
-/**
- * Policy Definition (APL v1)
- */
-export interface Policy {
-  id: string;
-  version: string;
-  effect: 'allow' | 'deny';
-  
-  // Who matches this policy?
-  subject: {
-    type?: string;       // e.g., "user"
-    id?: string;         // Specific ID
-    attributes?: Record<string, any>; // e.g., { role: "admin" }
-  };
-
-  // What actions are covered?
-  action: string[];
-
-  // What resources are covered?
-  resource: {
-    type?: string;
-    attributes?: Record<string, any>;
-  };
-
-  // Logic condition (String to be evaluated by Expression Engine)
-  condition?: string;
-}
-
-/**
- * A Policy with a pre-compiled expression function.
- * Used internally by Accord for performance.
- */
-export interface CompiledPolicy extends Policy {
-  compiledCondition?: ((scope: any) => any);
-}
 
 /**
  * The Input Request for the Evaluation Engine
@@ -78,12 +28,77 @@ export interface AccessRequest {
   context?: Context;
 }
 
-/**
- * The Output Decision
- */
+export interface Policy {
+  id: string;
+  version: string;
+  effect: 'allow' | 'deny';
+  subject: {
+    type?: string;
+    id?: string; // Re-added for backward compatibility with evaluator
+    attributes?: Record<string, any>;
+  };
+  action: string[];
+  resource: {
+    type?: string;
+    id?: string; // Re-added for backward compatibility with evaluator
+    attributes?: Record<string, any>;
+  };
+  condition?: string;
+}
+
+export interface CompiledPolicy extends Policy {
+  compiledCondition?: ((scope: any) => any);
+}
+
 export interface Decision {
   decision: 'allow' | 'deny';
   policy_id?: string;
   reason?: string;
 }
 
+// --- NEW v1.2 Types ---
+
+export interface DecisionTrace extends Decision {
+  trace: {
+    matchedPolicies: string[];
+    evaluatedPolicies: string[];
+    latencyMs: number;
+    resolvedAttributes: Record<string, any>;
+  };
+}
+
+export interface IStorageAdapter {
+  getPolicy(id: string): Promise<Policy | null>;
+  listPolicies(): Promise<Policy[]>;
+  savePolicy(policy: Policy): Promise<void>;
+  deletePolicy(id: string): Promise<void>;
+
+  getIdentity(id: string): Promise<Identity | null>;
+  listIdentities(): Promise<Identity[]>;
+  saveIdentity(identity: Identity): Promise<void>;
+  updateIdentity(id: string, updates: Partial<Identity>): Promise<void>;
+}
+
+export interface JITConfig {
+  enabled: boolean;
+  attributeMapping: Record<string, string>;
+  defaultStatus: 'active' | 'suspended';
+}
+
+export type BeforeDecisionHook = (ctx: { request: any; attributes: any }) => void | Promise<void>;
+export type AfterDecisionHook = (result: DecisionTrace) => void | Promise<void>;
+
+export interface LifecycleHooks {
+  beforeDecision?: BeforeDecisionHook[];
+  afterDecision?: AfterDecisionHook[];
+}
+
+// Legacy Config for backwards compatibility in exports
+export interface AccordConfig {
+  policyPath?: string;
+  identityPath?: string;
+  adapter?: IStorageAdapter;
+  jit?: JITConfig;
+  hooks?: LifecycleHooks;
+  logger?: any;
+}

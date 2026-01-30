@@ -5,7 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-01-25 (Current Date)
+## [1.2.0] - 2026-01-30
+
+### Added
+
+- **Platform Mode**: Standalone HTTP Server (`accord serve`) for centralized control.
+- **Storage Abstraction**: New `IStorageAdapter` interface enabling pluggable backends.
+- **Postgres Adapter**: `PostgresStoreAdapter` with JSONB schema for enterprise scalability.
+- **Explainability**: Added `DecisionTrace` to all responses for audit and debugging.
+- **JIT Provisioning**: Automatic identity creation via `IdentityResolver` on first access.
+- **Management API**: Full REST API for CRUD operations on Policies and Identities.
+- **Lifecycle Hooks**: Support for `beforeDecision` and `afterDecision` middleware.
+
+### Changed
+
+- Policies are now stored in a database (when using Postgres adapter).
+- Configuration moves from file paths to Adapter objects.
+- Decision response now includes detailed trace information.
+
+### Fixed
+
+- Improved error handling for Postgres connection issues.
+- Hot-reload triggers on Management API writes.
+
+## [1.1.0] - 2026-01-25
 
 ### Added
 

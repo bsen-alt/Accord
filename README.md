@@ -12,11 +12,11 @@
   </a>
 </p>
 
-Accord is a **policy-first identity and access engine for Node.js**.
+Accord is a **policy-first identity and access platform for Node.js**.
 
 It treats access not as scattered application logic, but as a formal agreement between identities, systems, and resources - evaluated through declarative, versioned policies.
 
-**New in v1.1:** Observability, YAML configuration, hot reload, and native NestJS support.
+**New in v1.2:** Database-first persistence, Standalone Server Mode, JIT provisioning, and Explainable Decision Traces.
 
 ---
 
@@ -25,7 +25,8 @@ It treats access not as scattered application logic, but as a formal agreement b
 - [Why Accord](#-why-accord)
 - [Key Features](#key-features)
 - [Installation](#-installation)
-- [Quick Start](#-quick-start-v11)
+- [Quick Start (Server Mode)](#-quick-start-server-mode)
+- [Usage (Library Mode)](#-usage-library-mode)
 - [Framework Integration](#-framework-integration)
 - [CLI Tool](#-cli-tool)
 - [Documentation](#-documentation)
@@ -37,6 +38,8 @@ It treats access not as scattered application logic, but as a formal agreement b
 
 ## 🚀 Why Accord?
 
+v1.1 was a library. v1.2 is a platform.
+
 Modern authorization is fragmented:
 
 - Authentication in one service
@@ -45,18 +48,20 @@ Modern authorization is fragmented:
 
 Accord centralizes authorization into a single **governance layer**, acting as the _System of Record_ for access control across your platform.
 
-Instead of embedding authorization logic throughout your codebase, Accord externalizes it into auditable, inspectable, and versioned policy definitions.
+**"ACCORD v1.2 turns authorization from scattered code into a centralized, explainable control plane-without becoming an IdP or middleware."**
 
 ---
 
 ## Key Features
 
-- 🔍 **Observability** – Built-in audit logging (console & file)
-- 📝 **Policy as Code** – JSON and YAML configuration support
-- 🛡️ **Reliability** – Zod-based schema validation to prevent invalid policies
-- 🔄 **Zero-Downtime Updates** – Hot reload policies without restarting services
-- 🧩 **Framework Adapters** – Express, NestJS, and Fastify integrations
-- 📦 **CLI Tooling** – Validate and simulate access decisions locally
+- 🚀 **Platform Mode** – Standalone HTTP server for centralized decision making.
+- 🗄️ **Database-First** – Pluggable storage adapters (Postgres, File) with JSONB optimization.
+- 🤝 **JIT Provisioning** – Automatic identity creation on first login.
+- 📊 **Explainability** – Full decision traces (latency, matched policies) for debugging.
+- 🔍 **Observability** – Built-in audit logging (console & file).
+- 📝 **Policy as Code** – JSON and YAML configuration support.
+- 🛡️ **Reliability** – Zod-based schema validation.
+- 🧩 **Framework Adapters** – Express, NestJS, and Fastify integrations.
 
 ---
 
@@ -66,64 +71,93 @@ Instead of embedding authorization logic throughout your codebase, Accord extern
 npm install @navirondynamics/accord
 ```
 
+````
+
 ---
 
-## 🛠️ Quick Start (v1.1)
+## 🛠️ Quick Start (Server Mode)
 
-### 1. Define Policies (YAML supported)
+The fastest way to experience v1.2 is running Accord as a standalone service.
 
-Create `config/policies.yaml`:
+### 1. Configure Environment
 
-```yaml
-- id: 'admin-delete'
-  version: '1.1'
-  effect: 'allow'
-  subject:
-    type: 'user'
-    attributes:
-      role: 'admin'
-  action: ['delete']
-  resource:
-    type: 'booking'
+Create a `.env` file:
+
+```env
+DATABASE_URL=postgres://user:password@localhost:5432/accord
+PORT=8080
+JIT_ENABLED=true
 ```
 
+### 2. Run the Server
+
+```bash
+npx @navirondynamics/accord serve --adapter postgres
+```
+
+### 3. Create a Policy
+
+```bash
+curl -X POST http://localhost:8080/api/v1/policies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "policy-view-all",
+    "version": "1.2",
+    "effect": "allow",
+    "subject": { "type": "user" },
+    "action": ["view"],
+    "resource": { "type": "document" }
+  }'
+```
+
+### 4. Check Access
+
+```bash
+curl -X POST http://localhost:8080/api/v1/check \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "alice",
+    "action": "view",
+    "resource": { "type": "document" }
+  }'
+```
+
+_Result: Alice is automatically created (JIT) and allowed._
+
 ---
 
-### 2. Initialize Accord
+## 🧩 Usage (Library Mode)
+
+You can also embed Accord directly into your Node.js applications.
 
 ```javascript
-const { Accord, ConsoleAuditLogger } = require('@navirondynamics/accord');
+const { Accord, PostgresStoreAdapter } = require('@navirondynamics/accord');
 
-const accord = new Accord({
-  policyPath: './config/policies.yaml',
-  identityPath: './config/identities.json',
-  logger: new ConsoleAuditLogger(),
+// 1. Initialize Storage
+const adapter = new PostgresStoreAdapter({
+  connectionString: process.env.DATABASE_URL,
 });
-```
 
----
+// 2. Initialize Accord
+const accord = new Accord({
+  adapter,
+  jit: { enabled: true, defaultStatus: 'active' },
+});
 
-### 3. Check Access
+// 3. Check Access
+const decision = await accord.check('alice', 'view', { type: 'document' });
 
-```javascript
-async function deleteUser(userId) {
-  const decision = await accord.check(userId, 'delete', {
-    type: 'user',
-    id: userId,
-  });
-
-  if (decision.decision === 'allow') {
-    console.log('Permission Granted');
-    // Perform deletion...
-  } else {
-    console.log('Access Denied:', decision.reason);
-  }
+if (decision.decision === 'allow') {
+  console.log(`Allowed by ${decision.policy_id}`);
+  console.log(`Latency: ${decision.trace.latencyMs}ms`);
 }
 ```
 
 ---
 
 ## 🛡️ Framework Integration
+
+Accord integrates seamlessly with Express, NestJS, and Fastify.
 
 ### NestJS
 
@@ -134,7 +168,7 @@ import { AccordGuard } from '@navirondynamics/accord/adapters/nest';
 export class BookingController {
   @UseGuards(
     new AccordGuard({
-      accordInstance: accord,
+      accordInstance: accord, // Use your Accord instance
       action: 'delete',
       resourceType: 'booking',
     })
@@ -145,8 +179,6 @@ export class BookingController {
   }
 }
 ```
-
----
 
 ### Express
 
@@ -166,19 +198,20 @@ app.delete(
 );
 ```
 
-Fastify support and advanced usage are available in the adapters documentation.
-
 ---
 
 ## 🔧 CLI Tool
 
-Validate policies or simulate access decisions directly from your terminal.
+Validate policies or run the server directly from your terminal.
 
 ```bash
-# Validate policy syntax
+# Run the Platform Server
+npx @navirondynamics/accord serve --adapter postgres --port 8080
+
+# Validate a local policy file
 npx @navirondynamics/accord validate ./config/policies.yaml
 
-# Test access logic
+# Dry-run a check (File mode)
 npx @navirondynamics/accord eval -i user_123 -a delete -r booking
 ```
 
@@ -187,23 +220,30 @@ npx @navirondynamics/accord eval -i user_123 -a delete -r booking
 ## 📚 Documentation
 
 - **Getting Started** – Installation and core concepts
-- **Configuration Guide** – Identities, policies, JSON vs YAML
-- **Observability & Auditing** – Production logging setup
-- **Framework Adapters** – Express, NestJS, Fastify usage
-- **CLI Reference** – Full command list
+- **Platform vs Library** – Choosing the right deployment mode
+- **Observability** – Interpreting Decision Traces
+- **JIT Provisioning** – Configuring identity mapping
+- **Adapters** – Setting up Postgres or File storage
+- **API Reference** – Management API documentation
 
 ---
 
 ## 🗺️ Roadmap
 
-Planned improvements:
+**Current (v1.2)**
 
-- Policy versioning & rollback
-- Database-backed policy storage
-- Web-based policy editor
-- Decision caching
-- OpenTelemetry tracing
-- Distributed policy synchronization
+- ✅ Standalone Server Mode
+- ✅ Postgres Storage Adapter
+- ✅ JIT Identity Provisioning
+- ✅ Explainable Decision Traces
+
+**Next (v1.3+)**
+
+- 🚧 Identity Caching for ultra-low latency
+- 🚧 Terraform Provider for Infrastructure-as-Code
+- 🚧 Webhooks on Policy Change
+- 🚧 Web-based Policy Editor UI
+- 🚧 Multi-region replication
 
 ---
 
@@ -213,11 +253,9 @@ Contributions are welcome.
 
 1. Fork the repository
 2. Create a feature branch
-
    ```bash
    git checkout -b feature/my-feature
    ```
-
 3. Commit your changes
 4. Push to your fork
 5. Open a Pull Request
@@ -233,3 +271,4 @@ ISC
 ```
 
 ```
+````

@@ -1,6 +1,6 @@
 {
   "name": "@navirondynamics/accord",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "A policy-first identity and access engine for modular systems.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -8,7 +8,6 @@
     "dist",
     "README.md"
   ],
-
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bsen-alt/Accord.git"
@@ -17,13 +16,12 @@
     "url": "https://github.com/bsen-alt/Accord/issues"
   },
   "homepage": "https://github.com/bsen-alt/Accord#readme",
-
-
   "scripts": {
     "test": "jest",
     "build": "tsc",
     "prepublishOnly": "npm run build",
-    "cli": "ts-node src/cli/index.ts"
+    "serve:postgres": "ts-node src/cli/index.ts serve --adapter postgres",
+    "serve:file": "ts-node src/cli/index.ts serve --adapter file"
   },
   "keywords": [
     "authorization",
@@ -41,7 +39,8 @@
     "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/jsonata": "^1.3.1",
-    "@types/node": "^25.0.10",
+    "@types/node": "^25.1.0",
+    "@types/pg": "^8.16.0",
     "@typescript-eslint/eslint-plugin": "^8.53.1",
     "@typescript-eslint/parser": "^8.53.1",
     "eslint": "^9.39.2",
@@ -54,12 +53,15 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@nestjs/common": "^11.1.12",
     "commander": "^14.0.2",
+    "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "fastify": "^5.7.1",
+    "fastify": "^5.7.2",
     "js-yaml": "^4.1.1",
     "jsonata": "^2.1.0",
+    "pg": "^8.17.2",
     "zod": "^4.3.6"
   }
 }
