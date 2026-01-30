@@ -1,9 +1,11 @@
 // src/core/evaluator.ts
-import { CompiledPolicy, AccessRequest, Decision, Identity } from './types';
-import jsonata from 'jsonata'; 
+import { CompiledPolicy, AccessRequest, DecisionTrace, Identity } from './types';
+import jsonata from 'jsonata';
 
 /**
  * Helper: Matches attributes between policy and request.
+ * Handles the special case of 'status' which sits at the root of the Identity object,
+ * vs custom attributes which sit in 'attributes'.
  */
 function matchesAttributes(
   policyAttrs: Record<string, any> | undefined,
@@ -14,10 +16,12 @@ function matchesAttributes(
   for (const key in policyAttrs) {
     const expectedValue = policyAttrs[key];
 
+    // Special handling for 'status' field on Identity
     if (key === 'status') {
       if (requestSubject.status !== expectedValue) return false;
     } 
     else {
+      // Standard attribute lookup
       if (requestSubject.attributes?.[key] !== expectedValue) {
         return false;
       }
@@ -56,6 +60,11 @@ function matchesResource(policy: CompiledPolicy, request: AccessRequest): boolea
   const rRes = request.resource;
 
   if (pRes.type && pRes.type !== rRes.type) {
+    return false;
+  }
+
+  // Note: Policies can match on resource ID if specified, though less common in ABAC
+  if (pRes.id && pRes.id !== rRes.id) {
     return false;
   }
 
@@ -99,7 +108,6 @@ async function evaluateCondition(policy: CompiledPolicy, request: AccessRequest)
     } 
     
     // 2. Fallback Path: Compile and run immediately (Unit Tests / Raw Data)
-    // This ensures unit tests using raw Policy objects still work.
     else {
       const expression = jsonata(policy.condition);
       const result = await expression.evaluate(scope);
@@ -113,7 +121,8 @@ async function evaluateCondition(policy: CompiledPolicy, request: AccessRequest)
 }
 
 /**
- * CORE FUNCTION: Evaluates a single policy against a request.
+ * Helper: Determines if a policy applies to the request.
+ * A policy applies if Subject, Resource, and Action match, AND Condition is met.
  */
 async function isApplicable(policy: CompiledPolicy, request: AccessRequest): Promise<boolean> {
   return (
@@ -126,46 +135,76 @@ async function isApplicable(policy: CompiledPolicy, request: AccessRequest): Pro
 
 /**
  * MAIN ENTRY POINT: The Brain.
+ * Evaluates all policies against the request to produce a DecisionTrace.
  */
-export async function evaluate(request: AccessRequest, policies: CompiledPolicy[]): Promise<Decision> {
-  let hasMatch = false;
-  let deniedBy: string | undefined;
+export async function evaluate(request: AccessRequest, policies: CompiledPolicy[]): Promise<DecisionTrace> {
+  const startTime = Date.now();
+  const evaluatedPolicies: string[] = [];
+  const matchedPolicies: string[] = [];
+  
+  let explicitDeny: CompiledPolicy | null = null;
+  let allowMatch: CompiledPolicy | null = null;
 
   // 1. Scan all policies
   for (const policy of policies) {
-    if (await isApplicable(policy, request)) {
-      hasMatch = true;
+    evaluatedPolicies.push(policy.id);
+    const isMatch = await isApplicable(policy, request);
 
+    if (isMatch) {
+      matchedPolicies.push(policy.id);
+      
       // 2. Conflict Resolution: Explicit Deny wins immediately
       if (policy.effect === 'deny') {
-        return {
-          decision: 'deny',
-          policy_id: policy.id,
-          reason: 'Explicit deny policy matched',
-        };
+        explicitDeny = policy;
+        break; 
+      } else if (policy.effect === 'allow') {
+        // Track the most recent allow (or could be first, depending on preference. 
+        // In this implementation, we continue scanning for potential overrides/denies)
+        allowMatch = policy;
       }
     }
   }
 
-  // 3. Final Decision
-  if (hasMatch) {
-    const allowingPolicy = policies.find(p => 
-      p.effect === 'allow' && 
-      matchesSubject(p, request) && 
-      matchesResource(p, request) && 
-      matchesAction(p, request)
-    ); 
-    
+  const latencyMs = Date.now() - startTime;
+
+  // 3. Construct Final Decision
+  if (explicitDeny) {
+    return {
+      decision: 'deny',
+      policy_id: explicitDeny.id,
+      reason: 'Explicit deny policy matched',
+      trace: {
+        matchedPolicies,
+        evaluatedPolicies,
+        latencyMs,
+        resolvedAttributes: request.subject.attributes
+      }
+    };
+  }
+
+  if (allowMatch) {
     return {
       decision: 'allow',
-      policy_id: allowingPolicy?.id, 
+      policy_id: allowMatch.id,
       reason: 'Allowed by matching policy',
+      trace: {
+        matchedPolicies,
+        evaluatedPolicies,
+        latencyMs,
+        resolvedAttributes: request.subject.attributes
+      }
     };
   }
 
   // 4. Default Deny
   return {
     decision: 'deny',
-    reason: 'No matching policy found (Default Deny)',
+    reason: 'No matching policy found',
+    trace: {
+      matchedPolicies,
+      evaluatedPolicies,
+      latencyMs,
+      resolvedAttributes: request.subject.attributes
+    }
   };
 }

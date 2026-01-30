@@ -1,33 +1,61 @@
-// src/core/resolver.ts
-import { Identity } from './types';
-import { IdentityStore } from '../store/identity';
+import { Identity, JITConfig, Context } from './types';
+import { IStorageAdapter } from '../adapters/interface';
+import jsonata from 'jsonata';
 
 export class IdentityResolver {
-  private store: IdentityStore;
+  private store: IStorageAdapter;
+  private jitConfig: JITConfig;
 
-  constructor(identityStore: IdentityStore) {
-    this.store = identityStore;
+  constructor(store: IStorageAdapter, jitConfig: JITConfig = { enabled: false, attributeMapping: {}, defaultStatus: 'active' }) {
+    this.store = store;
+    this.jitConfig = jitConfig;
   }
 
-  /**
-   * Resolves an external ID to an Internal Identity.
-   * This is the "Bridge" logic.
-   */
-  resolve(externalId: string): Identity {
-    const identity = this.store.getIdentity(externalId);
+  async resolve(externalId: string, context?: Context): Promise<Identity> {
+    let identity = await this.store.getIdentity(externalId);
 
-    if (!identity) {
-      // In a real app, you might auto-provision here (Shadow Identity).
-      // For v1, we strictly require the user to exist in the DB.
-      throw new Error(`Identity not found for ID: ${externalId}`);
+    // PILLAR 6: JIT Provisioning
+    if (!identity && this.jitConfig.enabled) {
+      identity = await this.provisionIdentity(externalId, context || {});
     }
 
-    // ENFORCEMENT: The "Kill Switch"
-    // Even if the token is valid, if internal status is suspended, access is denied.
+    if (!identity) {
+      throw new Error(`Identity not found: ${externalId}`);
+    }
+
+    // Enforcement: Kill Switch
     if (identity.status !== 'active') {
       throw new Error(`Identity ${externalId} is ${identity.status}. Access denied.`);
     }
 
     return identity;
+  }
+
+  private async provisionIdentity(externalId: string, context: Context): Promise<Identity> {
+    const attributes: Record<string, any> = {};
+    
+    // Map attributes from context/claims using JSONata
+    for (const [key, expression] of Object.entries(this.jitConfig.attributeMapping)) {
+      try {
+        const expr = jsonata(expression);
+        const result = expr.evaluate(context);
+        if (result !== undefined) {
+          attributes[key] = result;
+        }
+      } catch (e) {
+        console.warn(`JIT Mapping failed for ${key}:`, e);
+      }
+    }
+
+    const newIdentity: Identity = {
+      id: externalId,
+      type: 'user', // Default to user
+      status: this.jitConfig.defaultStatus,
+      attributes
+    };
+
+    await this.store.saveIdentity(newIdentity);
+    console.log(`[JIT] Provisioned identity for ${externalId}`);
+    return newIdentity;
   }
 }
