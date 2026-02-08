@@ -1,48 +1,44 @@
 // tests/resolver.test.ts
 import { IdentityResolver } from '../src/core/resolver';
-import { IdentityStore } from '../src/store/identity';
+import { FileStoreAdapter } from '../src/store/adapters/file'; // Switched from IdentityStore
 
 describe('Identity Resolver', () => {
-  let store: IdentityStore;
+  let adapter: FileStoreAdapter;
   let resolver: IdentityResolver;
 
   beforeAll(() => {
-    store = new IdentityStore('./config/identities.json');
+    adapter = new FileStoreAdapter('./config/policies.json', './config/identities.json');
     // Force u1 to active before running tests (Cleanup from previous runs)
     try {
-      store.updateIdentity('u1', { status: 'active' });
+      adapter.updateIdentity('u1', { status: 'active' });
     } catch (e) {
       // Ignore if user doesn't exist yet
     }
 
-    resolver = new IdentityResolver(store);
+    resolver = new IdentityResolver(adapter);
   });
 
-  test('1. Should resolve a valid active user', () => {
-    const user = resolver.resolve('u1');
+  test('1. Should resolve a valid active user', async () => { // Added async
+    const user = await resolver.resolve('u1'); // Added await
     expect(user.id).toBe('u1');
     expect(user.status).toBe('active');
   });
 
-  test('2. Should throw error for suspended user (Kill Switch)', () => {
+  test('2. Should throw error for suspended user (Kill Switch)', async () => { // Added async
     // 1. Ensure u1 is active
-    store.updateIdentity('u1', { status: 'active' });
+    await adapter.updateIdentity('u1', { status: 'active' }); // Added await
 
     // 2. Suspend them
-    store.updateIdentity('u1', { status: 'suspended' });
+    await adapter.updateIdentity('u1', { status: 'suspended' }); // Added await
 
     // 3. Try to resolve -> Should Error
-    expect(() => {
-      resolver.resolve('u1');
-    }).toThrow('is suspended');
+    await expect(resolver.resolve('u1')).rejects.toThrow('is suspended'); // Updated to async expect
 
     // Cleanup
-    store.updateIdentity('u1', { status: 'active' });
+    await adapter.updateIdentity('u1', { status: 'active' }); // Added await
   });
 
-  test('3. Should throw error for unknown user', () => {
-    expect(() => {
-      resolver.resolve('ghost_user');
-    }).toThrow('Identity not found');
+  test('3. Should throw error for unknown user', async () => { // Added async
+    await expect(resolver.resolve('ghost_user')).rejects.toThrow('Identity not found'); // Updated to async expect
   });
 });

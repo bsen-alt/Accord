@@ -26,11 +26,11 @@ const mockRes = () => {
 describe('Fastify Adapter', () => {
   let accord: Accord;
 
-  beforeAll(() => {
-    accord = new Accord({
+  beforeAll(async () => { 
+    accord = await Accord.create({
       policyPath: './config/policies.json',
       identityPath: './config/identities.json'
-    });
+    } as any);
   });
 
   test('1. Should allow request for u1 Admin', async () => {

@@ -1,4 +1,4 @@
-//src/store/adapters/postgres.ts
+// src/store/adapters/postgres.ts
 import { Pool, PoolConfig } from 'pg';
 import { IStorageAdapter, Policy, Identity } from '../../core/types';
 import { Schemas } from '../../core/validation';
@@ -19,24 +19,60 @@ export class PostgresStoreAdapter implements IStorageAdapter {
   }
 
   async getPolicy(id: string): Promise<Policy | null> {
-    const res = await this.pool.query('SELECT data FROM policies WHERE id = $1', [id]);
+    // v1.3: Fetch the LATEST version by created_at
+    const query = 'SELECT data FROM policies WHERE id = $1 ORDER BY created_at DESC LIMIT 1';
+    const res = await this.pool.query(query, [id]);
+    if (res.rows.length === 0) return null;
+    return this.validatePolicy(res.rows[0].data);
+  }
+
+  async getPolicyVersion(id: string, version: string): Promise<Policy | null> {
+    // v1.3: Fetch specific version
+    const res = await this.pool.query('SELECT data FROM policies WHERE id = $1 AND version = $2', [id, version]);
     if (res.rows.length === 0) return null;
     return this.validatePolicy(res.rows[0].data);
   }
 
   async listPolicies(): Promise<Policy[]> {
-    const res = await this.pool.query('SELECT data FROM policies');
+    // v1.3: Distinct on ID to get only latest versions
+    const query = `
+      SELECT DISTINCT ON (id) data 
+      FROM policies 
+      ORDER BY id, created_at DESC
+    `;
+    const res = await this.pool.query(query);
+    return res.rows.map(row => this.validatePolicy(row.data));
+  }
+
+  async listPolicyHistory(id: string): Promise<Policy[]> {
+    const res = await this.pool.query('SELECT data FROM policies WHERE id = $1 ORDER BY created_at DESC', [id]);
     return res.rows.map(row => this.validatePolicy(row.data));
   }
 
   async savePolicy(policy: Policy): Promise<void> {
     const validated = this.validatePolicy(policy);
+    
+    // v1.3: REMOVED ON CONFLICT DO UPDATE. We always INSERT new versions.
     const query = `
-      INSERT INTO policies (id, version, data)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (id) DO UPDATE SET data = $3, version = $2
+      INSERT INTO policies (id, version, data, created_at)
+      VALUES ($1, $2, $3, NOW())
     `;
     await this.pool.query(query, [validated.id, validated.version, JSON.stringify(validated)]);
+  }
+
+  async rollbackPolicy(id: string, targetVersion: string): Promise<void> {
+    // v1.3: Fetch old version -> Save as NEW version (Preserves history)
+    const oldPolicy = await this.getPolicyVersion(id, targetVersion);
+    if (!oldPolicy) throw new Error(`Version ${targetVersion} not found for policy ${id}`);
+
+    // Increment version number (Simple logic, could be smarter)
+    const newVersion = `${targetVersion}-rollback-${Date.now()}`;
+    
+    await this.savePolicy({
+      ...oldPolicy,
+      version: newVersion,
+      created_at: new Date().toISOString()
+    });
   }
 
   async deletePolicy(id: string): Promise<void> {
@@ -49,8 +85,8 @@ export class PostgresStoreAdapter implements IStorageAdapter {
     return this.validateIdentity(res.rows[0].data);
   }
 
-  async listIdentities(): Promise<Identity[]> {
-    const res = await this.pool.query('SELECT data FROM identities');
+  async listIdentities(limit: number = 1000): Promise<Identity[]> { // v1.3: Added limit
+    const res = await this.pool.query('SELECT data FROM identities LIMIT $1', [limit]);
     return res.rows.map(row => this.validateIdentity(row.data));
   }
 
@@ -70,7 +106,6 @@ export class PostgresStoreAdapter implements IStorageAdapter {
     await this.saveIdentity({ ...current, ...updates });
   }
   
-  // FIXED: Return type changed to Promise<void>
   async close(): Promise<void> {
     await this.pool.end();
   }

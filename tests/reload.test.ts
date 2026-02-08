@@ -1,5 +1,5 @@
 // tests/reload.test.ts
-import { Accord, AccordConfig } from '../src/accord';
+import { Accord } from '../src/accord';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -22,21 +22,17 @@ describe('Hot Reload Functionality', () => {
 
   let accord: Accord;
 
-  beforeAll(() => {
-    // FIX: Write GOOD (Allow) policy to file
-    // This ensures every test starts with a valid file, regardless of the state left by the previous run.
+  beforeAll(async () => {
     fs.writeFileSync(configPath, JSON.stringify(goodPolicyContent, null, 2));
 
-    // Backup current (now good) policies
     if (fs.existsSync(configPath)) {
       fs.copyFileSync(configPath, backupPath);
     }
 
-    const config: AccordConfig = {
+    accord = await Accord.create({ // Use create
       policyPath: configPath,
       identityPath: idPath
-    };
-    accord = new Accord(config);
+    } as any);
   });
 
   afterAll(() => {
@@ -66,7 +62,7 @@ describe('Hot Reload Functionality', () => {
     fs.writeFileSync(configPath, JSON.stringify(restrictivePolicy, null, 2));
 
     // 3. Reload
-    accord.reload();
+    await accord.reload();
 
     // 4. Check again (Should now be denied)
     decision = await accord.check('u1', 'delete', { type: 'booking', id: 'b1' });
@@ -76,6 +72,7 @@ describe('Hot Reload Functionality', () => {
   test('2. Should keep old config if reload fails (Safety)', async () => {
     // 1. Write INVALID JSON to policy file
     const badJSON = '{ "this is": invalid json }';
+    fs.writeFileSync(configPath, badJSON);
 
     // 2. Reload (Should log error internally, NOT throw)
     expect(() => accord.reload()).not.toThrow();
