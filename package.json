@@ -1,6 +1,6 @@
 {
   "name": "@navirondynamics/accord",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "A policy-first identity and access engine for modular systems.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,7 +21,8 @@
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "serve:postgres": "ts-node src/cli/index.ts serve --adapter postgres",
-    "serve:file": "ts-node src/cli/index.ts serve --adapter file"
+    "serve:file": "ts-node src/cli/index.ts serve --adapter file",
+    "migrate": "psql $DATABASE_URL -f migrations/001_v13_versioning.sql"
   },
   "keywords": [
     "authorization",

@@ -1,4 +1,4 @@
-//src/store/adapters/file.ts
+// src/store/adapters/file.ts
 import { IStorageAdapter, Policy, Identity } from '../../core/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -46,19 +46,47 @@ export class FileStoreAdapter implements IStorageAdapter {
     fs.writeFileSync(this.policyPath, JSON.stringify(policies, null, 2));
   }
 
+  // --- v1.3 New Methods (File Adapter Implementation) ---
+
+  async getPolicyVersion(id: string, version: string): Promise<Policy | null> {
+    // File adapter only stores the "current" version.
+    const current = await this.getPolicy(id);
+    if (current && current.version === version) {
+      return current;
+    }
+    return null;
+  }
+
+  async listPolicyHistory(id: string): Promise<Policy[]> {
+    // File adapter has no history, return current version as the only history item.
+    const current = await this.getPolicy(id);
+    return current ? [current] : [];
+  }
+
+  async rollbackPolicy(id: string, targetVersion: string): Promise<void> {
+    // Rollback is not supported in File adapter (it would require git or backups).
+    throw new Error("Rollback is not supported in FileStoreAdapter. Please use PostgresStoreAdapter for versioning features.");
+  }
+
   // --- Identity Methods ---
   async getIdentity(id: string): Promise<Identity | null> {
     const identities = await this.listIdentities();
     return identities.find(i => i.id === id) || null;
   }
 
-  async listIdentities(): Promise<Identity[]> {
+  async listIdentities(limit?: number): Promise<Identity[]> { // v1.3: Added limit param
     try {
       if (!fs.existsSync(this.identityPath)) return [];
       const content = fs.readFileSync(this.identityPath, 'utf-8');
       const data = JSON.parse(content);
       const result = Schemas.Identity.array().safeParse(data);
-      return result.success ? result.data : [];
+      let identities = result.success ? result.data : [];
+      
+      if (limit && identities.length > limit) {
+        identities = identities.slice(0, limit);
+      }
+      
+      return identities;
     } catch (e) {
       return [];
     }

@@ -27,11 +27,11 @@ const mockRes = () => {
 describe('Express Adapter', () => {
   let accord: Accord;
 
-  beforeAll(() => {
-    accord = new Accord({
+    beforeAll(async () => { // Make beforeAll async
+    accord = await Accord.create({
       policyPath: './config/policies.json',
       identityPath: './config/identities.json'
-    });
+    } as any);
   });
 
   test('1. Should call next() for authorized user (u1 Admin)', async () => {
@@ -79,7 +79,7 @@ describe('Express Adapter', () => {
 
   test('3. Should return 403 for suspended user', async () => {
     // 1. Suspend u1
-    accord.getStore().updateIdentity('u1', { status: 'suspended' });
+    await accord.getStore().updateIdentity('u1', { status: 'suspended' });
 
     const req = mockReq('u1', 'b1');
     const res = mockRes();
@@ -98,6 +98,6 @@ describe('Express Adapter', () => {
     expect(res.body.reason).toContain('suspended');
 
     // Cleanup
-    accord.getStore().updateIdentity('u1', { status: 'active' });
+    await accord.getStore().updateIdentity('u1', { status: 'active' });
   });
 });

@@ -15,7 +15,9 @@ const program = new Command();
 program
   .name('accord')
   .description('Accord Policy Engine CLI')
-  .version('1.2.0');
+  .version('1.3.0');
+
+// --- v1.2 Commands ---
 
 program
   .command('validate <file>')
@@ -34,7 +36,7 @@ program
 
 program
   .command('eval')
-  .description('Evaluate an access request')
+  .description('Evaluate an access request (File Mode)')
   .requiredOption('-i, --id <userId>', 'User ID')
   .requiredOption('-a, --action <action>', 'Action')
   .requiredOption('-r, --resource <type>', 'Resource Type')
@@ -43,9 +45,10 @@ program
   .option('-u, --user <path>', 'Path to identities file', './config/identities.json')
   .action(async (options) => {
     try {
-      // FIX: Use FileStoreAdapter for CLI eval
+      // Use FileStoreAdapter for CLI eval
       const adapter = new FileStoreAdapter(options.policy, options.user);
-      const accord = new Accord({ adapter });
+      // FIX: Use Accord.create to ensure initialization completes
+      const accord = await Accord.create({ adapter });
 
       const resource: any = {
         type: options.resource,
@@ -80,16 +83,17 @@ program
     let adapter;
 
     if (options.adapter === 'postgres') {
-      if (!options.postgresUrl) {
-        console.error('Error: Postgres URL required via --postgres-url or DATABASE_URL env var');
-        process.exit(1);
-      }
-      adapter = new PostgresStoreAdapter({ connectionString: options.postgresUrl });
+       if (!options.postgresUrl) {
+         console.error('Error: Postgres URL required via --postgres-url or DATABASE_URL env var');
+         process.exit(1);
+       }
+       adapter = new PostgresStoreAdapter({ connectionString: options.postgresUrl });
     } else {
-      adapter = new FileStoreAdapter('./config/policies.json', './config/identities.json');
+       adapter = new FileStoreAdapter('./config/policies.json', './config/identities.json');
     }
 
-    const accord = new Accord({
+    // FIX: Use Accord.create
+    const accord = await Accord.create({
       adapter,
       jit: {
         enabled: process.env.JIT_ENABLED === 'true',
@@ -97,13 +101,75 @@ program
            role: "$.role" 
         },
         defaultStatus: 'active'
-      }
+      },
+      // v1.3: Add Webhook support via environment variables
+      webhook: process.env.WEBHOOK_URL ? {
+        url: process.env.WEBHOOK_URL,
+        secret: process.env.WEBHOOK_SECRET, // Optional
+        events: ['decision', 'policy_change', 'identity_provision']
+      } : undefined
     });
 
+    // FIX: Removed duplicate startServer call
     await startServer({
       port: parseInt(options.port),
       accordInstance: accord
     });
+  });
+
+// --- v1.3 New Subcommands ---
+
+const policyCmd = program.command('policy');
+
+policyCmd
+  .command('history <id>')
+  .description('View version history for a policy (Postgres Only)')
+  .action(async (id) => {
+    try {
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) {
+        console.error('Error: DATABASE_URL environment variable is required for policy history.');
+        process.exit(1);
+      }
+
+      const adapter = new PostgresStoreAdapter({ connectionString: dbUrl });
+      const history = await adapter.listPolicyHistory(id);
+      
+      console.log(`History for policy: ${id}`);
+      if (history.length === 0) {
+        console.log('No history found.');
+      } else {
+        history.forEach(p => {
+          const date = p.created_at ? new Date(p.created_at).toLocaleString() : 'Unknown Date';
+          console.log(`- v${p.version} (${date}): ${p.effect.toUpperCase()}`);
+        });
+      }
+    } catch (error) {
+      console.error(`Error fetching history: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+policyCmd
+  .command('rollback <id>')
+  .description('Rollback policy to a specific version (Postgres Only)')
+  .requiredOption('-v, --version <version>', 'Target version to rollback to')
+  .action(async (id, options) => {
+    try {
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) {
+        console.error('Error: DATABASE_URL environment variable is required for rollback.');
+        process.exit(1);
+      }
+
+      const adapter = new PostgresStoreAdapter({ connectionString: dbUrl });
+      await adapter.rollbackPolicy(id, options.version);
+      console.log(`Successfully rolled back policy '${id}' to version '${options.version}'.`);
+      console.log(`Note: You may need to reload your application server or trigger a reload API call.`);
+    } catch (error) {
+      console.error(`Error during rollback: ${(error as Error).message}`);
+      process.exit(1);
+    }
   });
 
 program.parse(process.argv);

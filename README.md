@@ -16,7 +16,7 @@ Accord is a **policy-first identity and access platform for Node.js**.
 
 It treats access not as scattered application logic, but as a formal agreement between identities, systems, and resources - evaluated through declarative, versioned policies.
 
-**New in v1.2:** Database-first persistence, Standalone Server Mode, JIT provisioning, and Explainable Decision Traces.
+**New in v1.3:** Policy Simulation, Version Control, Rollback, Impact Analysis, and Visual Graph APIs.
 
 ---
 
@@ -27,18 +27,17 @@ It treats access not as scattered application logic, but as a formal agreement b
 - [Installation](#-installation)
 - [Quick Start (Server Mode)](#-quick-start-server-mode)
 - [Usage (Library Mode)](#-usage-library-mode)
+- [v1.3 New Features](#v13-new-features)
 - [Framework Integration](#-framework-integration)
 - [CLI Tool](#-cli-tool)
 - [Documentation](#-documentation)
-- [Roadmap](#-roadmap)
-- [Contributing](#-contributing)
 - [License](#-license)
 
 ---
 
 ## 🚀 Why Accord?
 
-v1.1 was a library. v1.2 is a platform.
+v1.1 was a library. v1.2 was a platform. **v1.3 is a control plane.**
 
 Modern authorization is fragmented:
 
@@ -48,7 +47,7 @@ Modern authorization is fragmented:
 
 Accord centralizes authorization into a single **governance layer**, acting as the _System of Record_ for access control across your platform.
 
-**"ACCORD v1.2 turns authorization from scattered code into a centralized, explainable control plane-without becoming an IdP or middleware."**
+**"ACCORD v1.3 transforms authorization from static rules into a visible, testable, and version-controlled system."**
 
 ---
 
@@ -58,10 +57,11 @@ Accord centralizes authorization into a single **governance layer**, acting as t
 - 🗄️ **Database-First** – Pluggable storage adapters (Postgres, File) with JSONB optimization.
 - 🤝 **JIT Provisioning** – Automatic identity creation on first login.
 - 📊 **Explainability** – Full decision traces (latency, matched policies) for debugging.
-- 🔍 **Observability** – Built-in audit logging (console & file).
+- 🔍 **Observability** – Built-in audit logging (console, file, & webhooks).
 - 📝 **Policy as Code** – JSON and YAML configuration support.
 - 🛡️ **Reliability** – Zod-based schema validation.
 - 🧩 **Framework Adapters** – Express, NestJS, and Fastify integrations.
+- 🧪 **Simulation Engine** – Dry-run policies without touching production.
 
 ---
 
@@ -71,13 +71,11 @@ Accord centralizes authorization into a single **governance layer**, acting as t
 npm install @navirondynamics/accord
 ```
 
-````
-
 ---
 
 ## 🛠️ Quick Start (Server Mode)
 
-The fastest way to experience v1.2 is running Accord as a standalone service.
+The fastest way to experience v1.3 is running Accord as a standalone service.
 
 ### 1. Configure Environment
 
@@ -87,6 +85,7 @@ Create a `.env` file:
 DATABASE_URL=postgres://user:password@localhost:5432/accord
 PORT=8080
 JIT_ENABLED=true
+WEBHOOK_URL=https://hooks.your-siem.com/webhook
 ```
 
 ### 2. Run the Server
@@ -102,7 +101,7 @@ curl -X POST http://localhost:8080/api/v1/policies \
   -H "Content-Type: application/json" \
   -d '{
     "id": "policy-view-all",
-    "version": "1.2",
+    "version": "1.0",
     "effect": "allow",
     "subject": { "type": "user" },
     "action": ["view"],
@@ -138,8 +137,8 @@ const adapter = new PostgresStoreAdapter({
   connectionString: process.env.DATABASE_URL,
 });
 
-// 2. Initialize Accord
-const accord = new Accord({
+// 2. Initialize Accord (Use static create for async safety)
+const accord = await Accord.create({
   adapter,
   jit: { enabled: true, defaultStatus: 'active' },
 });
@@ -155,9 +154,43 @@ if (decision.decision === 'allow') {
 
 ---
 
-## 🛡️ Framework Integration
+## 🌟 v1.3 New Features
 
-Accord integrates seamlessly with Express, NestJS, and Fastify.
+### Policy Simulation (Dry Run)
+
+Test policies without touching production data.
+
+```javascript
+const mockIdentity = {
+  id: 'test',
+  type: 'user',
+  status: 'active',
+  attributes: { role: 'admin' },
+};
+const result = await accord.simulate(mockIdentity, 'delete', {
+  type: 'booking',
+});
+```
+
+### Policy Rollback
+
+Revert a broken policy instantly via CLI.
+
+```bash
+accord policy rollback billing-access --to 1.2
+```
+
+### Visual Graph API
+
+Fetch the permission graph for visualization.
+
+```bash
+curl http://localhost:8080/api/v1/policies/graph
+```
+
+---
+
+## 🛡️ Framework Integration
 
 ### NestJS
 
@@ -202,7 +235,7 @@ app.delete(
 
 ## 🔧 CLI Tool
 
-Validate policies or run the server directly from your terminal.
+Validate policies, manage versions, or run the server directly from your terminal.
 
 ```bash
 # Run the Platform Server
@@ -213,6 +246,9 @@ npx @navirondynamics/accord validate ./config/policies.yaml
 
 # Dry-run a check (File mode)
 npx @navirondynamics/accord eval -i user_123 -a delete -r booking
+
+# v1.3: Rollback a policy
+npx @navirondynamics/accord policy rollback <policy-id> --to <version>
 ```
 
 ---
@@ -228,47 +264,6 @@ npx @navirondynamics/accord eval -i user_123 -a delete -r booking
 
 ---
 
-## 🗺️ Roadmap
-
-**Current (v1.2)**
-
-- ✅ Standalone Server Mode
-- ✅ Postgres Storage Adapter
-- ✅ JIT Identity Provisioning
-- ✅ Explainable Decision Traces
-
-**Next (v1.3+)**
-
-- 🚧 Identity Caching for ultra-low latency
-- 🚧 Terraform Provider for Infrastructure-as-Code
-- 🚧 Webhooks on Policy Change
-- 🚧 Web-based Policy Editor UI
-- 🚧 Multi-region replication
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome.
-
-1. Fork the repository
-2. Create a feature branch
-   ```bash
-   git checkout -b feature/my-feature
-   ```
-3. Commit your changes
-4. Push to your fork
-5. Open a Pull Request
-
-Please ensure tests pass and documentation is updated.
-
----
-
 ## 📜 License
 
 ISC
-
-```
-
-```
-````

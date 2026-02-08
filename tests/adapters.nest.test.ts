@@ -21,11 +21,11 @@ const createMockContext = (userId: string, resourceId: string, body: any = {}) =
 describe('NestJS Adapter', () => {
   let accord: Accord;
 
-  beforeAll(() => {
-    accord = new Accord({
+  beforeAll(async () => { 
+    accord = await Accord.create({
       policyPath: './config/policies.json',
       identityPath: './config/identities.json'
-    });
+    } as any);
   });
 
   test('1. Should return true for authorized user (u1 Admin)', async () => {
